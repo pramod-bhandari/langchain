@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@langchain/openai':
+        specifier: ^0.5.11
+        version: 0.5.11(@langchain/core@0.3.57(openai@4.103.0(ws@8.18.2)(zod@3.25.32)))(ws@8.18.2)
       '@supabase/supabase-js':
         specifier: ^2.49.8
         version: 2.49.8
