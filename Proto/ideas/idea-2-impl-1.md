@@ -177,6 +177,8 @@ create table documents (
 -- Search history
 create table search_history (
   id uuid default uuid_generate_v4() primary key,
+  user_id uuid,           -- nullable, for logged-in users
+  session_id text,        -- nullable, for anonymous users
   query text,
   results jsonb,
   sources jsonb,
@@ -186,7 +188,8 @@ create table search_history (
 -- User preferences
 create table user_preferences (
   id uuid default uuid_generate_v4() primary key,
-  user_id uuid references auth.users,
+  user_id uuid,           -- nullable, for logged-in users
+  session_id text,        -- nullable, for anonymous users
   preferences jsonb,
   created_at timestamp with time zone default timezone('utc'::text, now()),
   updated_at timestamp with time zone default timezone('utc'::text, now())
@@ -195,7 +198,8 @@ create table user_preferences (
 -- Conversation memory
 create table conversation_memory (
   id uuid default uuid_generate_v4() primary key,
-  session_id text,
+  user_id uuid,           -- nullable, for logged-in users
+  session_id text,        -- nullable, for anonymous users
   messages jsonb,
   context jsonb,
   created_at timestamp with time zone default timezone('utc'::text, now()),
@@ -207,13 +211,13 @@ create table conversation_memory (
 
 1. **Project Setup**
    ```bash
-   # Create Next.js project
-   npx create-next-app@latest doc-search --typescript
+   # Create Next.js 14 project
+   npx create-next-app@latest doc-search --typescript --use-npm
    cd doc-search
    
    # Install dependencies
-   npm install @supabase/supabase-js langchain @pinecone-database/pinecone
-   npm install @chakra-ui/react @emotion/react @emotion/styled framer-motion
+   npm install @supabase/supabase-js langchain
+   npm install @chakra-ui/react @emotion/react @emotion/styled
    ```
 
 2. **Environment Configuration**
@@ -273,8 +277,8 @@ create table conversation_memory (
 ### 7. Deployment
 
 1. **Infrastructure**
-   - Vercel for Next.js deployment
-   - Supabase for database
+   - Vercel for Next.js 14 deployment
+   - Supabase for database and vector store (no Pinecone needed)
    - Vector store optimization
    - Caching strategy
 
@@ -541,3 +545,57 @@ graph TD
    - Data backup
    - Service restoration
    - User notification 
+
+## Notes
+
+- **Vector Embeddings:** Supabase with the vector extension is sufficient for storing and searching embeddings. Pinecone is not required unless you need external, dedicated vector DB features.
+- **UI Animations:** Next.js 14 uses React. framer-motion is optional and not required unless you want advanced UI animations.
+- **Stack:** Next.js 14, Supabase (with vector), LangChain.js, Chakra UI, Emotion. 
+
+## User and Session Tracking
+
+### Anonymous Session Tracking (No Login)
+- When a user visits the site, generate a unique session ID (UUID) and store it in the browser (cookie or localStorage).
+- Use this session ID to associate user preferences, search history, and conversation memory in the database.
+- If the user logs in (optional), migrate session data to their authenticated user ID.
+
+### Table Schema Update for Session Tracking
+
+```sql
+-- user_preferences
+create table user_preferences (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid,           -- nullable, for logged-in users
+  session_id text,        -- nullable, for anonymous users
+  preferences jsonb,
+  created_at timestamp with time zone default timezone('utc'::text, now()),
+  updated_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- search_history
+create table search_history (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid,           -- nullable, for logged-in users
+  session_id text,        -- nullable, for anonymous users
+  query text,
+  results jsonb,
+  sources jsonb,
+  created_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- conversation_memory
+create table conversation_memory (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid,           -- nullable, for logged-in users
+  session_id text,        -- nullable, for anonymous users
+  messages jsonb,
+  context jsonb,
+  created_at timestamp with time zone default timezone('utc'::text, now()),
+  updated_at timestamp with time zone default timezone('utc'::text, now())
+);
+```
+
+### Implementation Notes
+- For anonymous users, always use the session ID for all DB operations.
+- If/when a user logs in, migrate all data from session ID to user ID for persistence.
+- This approach allows both anonymous and authenticated usage, supporting personalization and memory for all users. 
