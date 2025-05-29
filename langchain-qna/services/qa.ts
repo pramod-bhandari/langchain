@@ -27,6 +27,8 @@ export async function retrieveRelevantEmbeddings(queryEmbedding: number[]) {
     match_count: 5,
   });
 
+  console.log('Reterival data', data);
+
   if (error) {
     console.error('Error retrieving embeddings:', error);
     throw error;

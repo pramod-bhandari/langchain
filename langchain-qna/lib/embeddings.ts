@@ -40,7 +40,27 @@ export async function storeTextWithEmbedding(text: string) {
       throw new Error('Failed to generate embedding');
     }
 
-    console.log('Generated embedding:', embedding.length, 'dimensions');
+    console.log('Generated embedding:', embedding, 'dimensions');
+    // Write embedding to a file for debugging/verification
+    const fs = require('fs');
+    const path = require('path');
+    
+    // Create a debug folder if it doesn't exist
+    const debugDir = path.join(process.cwd(), 'debug');
+    if (!fs.existsSync(debugDir)){
+      fs.mkdirSync(debugDir);
+    }
+
+    // Write embedding with timestamp
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const embeddingFile = path.join(debugDir, `embedding-${timestamp}.json`);
+    fs.writeFileSync(embeddingFile, JSON.stringify({
+      text: text,
+      embedding: embedding,
+      dimensions: embedding.length
+    }, null, 2));
+
+    console.log('Wrote embedding to file:', embeddingFile);
 
     // First, insert the document
     const { data: documentData, error: documentError } = await supabase
