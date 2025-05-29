@@ -599,3 +599,99 @@ create table conversation_memory (
 - For anonymous users, always use the session ID for all DB operations.
 - If/when a user logs in, migrate all data from session ID to user ID for persistence.
 - This approach allows both anonymous and authenticated usage, supporting personalization and memory for all users. 
+
+## Agentic Enhancements
+
+### 1. Using External Tools to Enhance Answers
+- Agents can invoke external tools (e.g., calculator, summarizer, translator, code executor, web search) to process or enrich answers.
+- When a user query requires computation, summarization, translation, or external data, the agent selects and uses the appropriate tool.
+- Example: For "What is the sum of the values in this table?", the agent extracts the table and uses a calculator tool to compute the sum.
+- Tools are registered and managed via LangChain.js, which provides a framework for tool integration and invocation.
+
+### 2. Multi-step Reasoning (Decomposition of Complex Queries)
+- Agents can break down complex queries into smaller sub-questions, solve each, and aggregate the results.
+- Example: For "Find the average sales in my uploaded Excel file for the last quarter, and compare it to the industry average from the web":
+  1. Extract and calculate average sales from the Excel file (using a code or spreadsheet tool).
+  2. Search the web for industry average (using a web search tool).
+  3. Compare the two and generate a summary.
+- LangChain.js supports multi-step reasoning and planning via agent frameworks (e.g., ReAct, Plan-and-Execute).
+
+### 3. How It Fits in the Workflow
+- When a query is received, the Coordinator Agent determines if tool use or multi-step reasoning is needed.
+- The agent can:
+  - Use tools directly to answer or enrich responses.
+  - Decompose the query into steps, solve each step (possibly using different tools), and aggregate the answers.
+- This makes the system more flexible and capable of handling a wider range of user requests.
+
+### 4. Example Agent Architecture with Tool Use
+
+```typescript
+// agents/CoordinatorAgent.ts
+import { CalculatorTool, SummarizerTool, WebSearchTool } from "../tools";
+import { AgentExecutor } from "langchain/agents";
+
+class CoordinatorAgent {
+  private dbAgent: DBSearchAgent;
+  private webAgent: WebSearchAgent;
+  private memory: ConversationMemory;
+  private tools: any[];
+  private agentExecutor: AgentExecutor;
+
+  constructor() {
+    this.tools = [new CalculatorTool(), new SummarizerTool(), new WebSearchTool()];
+    this.agentExecutor = new AgentExecutor({ tools: this.tools });
+  }
+
+  async coordinateSearch(query: string): Promise<SearchResult> {
+    // Use agentExecutor to decide if tools or multi-step reasoning are needed
+    return await this.agentExecutor.run(query);
+  }
+}
+```
+
+- Tools can be defined and registered with the agent.
+- The agent can reason about which tools to use and in what order, supporting both single-step and multi-step (decomposed) queries.
+
+### 5. Libraries Used
+- **LangChain.js**: For agent framework, tool integration, and multi-step reasoning.
+- **Custom Tools**: Calculator, summarizer, translator, code executor, web search, etc. 
+
+## Memory & Personalization Enhancements
+
+### Long-term Memory with Embeddings
+- Store user interests and interaction history as embeddings in the database.
+- Use these embeddings to personalize search suggestions, follow-up questions, and result ranking.
+- When a user interacts with the system, update their interest profile embedding for more relevant future responses.
+
+### Session Continuity
+- For logged-in users, persist session and conversation memory in the database.
+- Allow users to return to previous sessions and continue their conversations seamlessly.
+- For anonymous users, maintain session continuity as long as the session ID is available in the browser.
+
+## Async Processing
+- Use background jobs (e.g., with serverless functions, queues, or Supabase Edge Functions) for heavy tasks:
+  - Large file processing
+  - Embedding generation
+  - Document parsing and chunking
+- Improves user experience by offloading time-consuming operations and providing progress updates or notifications.
+
+## Batch Search
+- Allow users to submit multiple queries at once (batch mode).
+- Process each query in parallel or sequentially, aggregate and return all results together.
+- Useful for power users, analytics, or bulk information retrieval.
+
+## Usage Analytics
+- Track and log:
+  - Popular queries
+  - Frequently accessed documents
+  - User engagement metrics (e.g., session duration, number of queries)
+- Use analytics to improve system performance, suggest trending topics, and optimize user experience.
+- Store analytics data in a dedicated table (e.g., `usage_analytics`).
+
+## Quality Monitoring
+- Monitor search quality by tracking:
+  - Query success rates
+  - User feedback (e.g., upvotes/downvotes, explicit ratings)
+  - Cases where no relevant results are found
+- Flag low-performing queries or documents for review and improvement.
+- Use this data to retrain models, refine embeddings, or update document processing pipelines. 
