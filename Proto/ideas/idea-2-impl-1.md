@@ -376,135 +376,144 @@ graph TD
 
 ### 3. Agent Collaboration Workflow
 
-The agent collaboration workflow is designed to provide efficient and comprehensive search results through coordinated interaction between different specialized agents. Here's how the agents work together:
+```mermaid
+graph TD
+    A[Coordinator Agent] --> B[Task Analysis]
+    B --> C{Search Strategy}
+    
+    C -->|Local First| D[DBSearch Agent]
+    C -->|Web First| E[WebSearch Agent]
+    C -->|Parallel| F[Both Agents]
+    
+    D --> G[Result Processing]
+    E --> G
+    F --> G
+    
+    G --> H[Result Validation]
+    H --> I[Source Attribution]
+    I --> J[Context Update]
+    J --> K[Response Generation]
 
-#### 3.1 Coordinator Agent
-- Acts as the central orchestrator for all search operations
-- Receives and analyzes user queries
-- Determines the optimal search strategy
-- Manages communication between agents
-- Handles result aggregation and ranking
+    subgraph "Task Analysis"
+        B1[Query Understanding] --> B2[Intent Classification]
+        B2 --> B3[Strategy Selection]
+    end
 
-#### 3.2 DBSearch Agent
-- Specializes in searching the local Supabase vector store
-- Performs semantic search using embeddings
-- Returns ranked results with metadata
-- Handles document retrieval and processing
-- Maintains connection with the vector database
+    subgraph "Search Strategy"
+        C1[Local DB Priority] --> C2[Web Search Priority]
+        C1 --> C3[Hybrid Search]
+    end
 
-#### 3.3 WebSearch Agent
-- Manages external web searches
-- Processes and normalizes web results
-- Adds source attribution
-- Handles rate limiting and API management
-- Ensures result quality and relevance
+    subgraph "Result Processing"
+        G1[Result Aggregation] --> G2[Deduplication]
+        G2 --> G3[Relevance Scoring]
+        G3 --> G4[Result Ranking]
+    end
 
-#### 3.4 Collaboration Process
+    subgraph "Context Management"
+        J1[Update Conversation History] --> J2[Update User Preferences]
+        J2 --> J3[Update Search Context]
+    end
 
-1. **Query Reception & Analysis**
-   - Coordinator receives the search query
+    subgraph "Response Generation"
+        K1[Format Results] --> K2[Generate Suggestions]
+        K2 --> K3[Prepare Response]
+    end
+```
+
+### Agent Collaboration Details
+
+1. **Task Analysis Phase**
+   - Coordinator Agent receives the search query
    - Analyzes query intent and complexity
    - Determines optimal search strategy
    - Considers user context and preferences
 
-2. **Strategy Selection**
-   - **Local First**: Prioritizes database search
-     - Immediate access to known information
-     - Faster response times
-     - Lower resource usage
-   
-   - **Web First**: Prioritizes web search
-     - Access to latest information
-     - Broader coverage
-     - Real-time data
-   
-   - **Parallel**: Executes both searches
-     - Comprehensive results
-     - Balanced approach
-     - Maximum coverage
+2. **Search Strategy Selection**
+   - **Local First**: Prioritizes database search for known information
+   - **Web First**: Prioritizes web search for external information
+   - **Parallel**: Executes both searches simultaneously for comprehensive results
 
-3. **Search Execution**
-   - Coordinator delegates search tasks
-   - Agents execute searches independently
-   - Results are collected and processed
-   - Quality checks are performed
+3. **Agent Execution**
+   - **DBSearch Agent**:
+     - Connects to Supabase vector store
+     - Performs semantic search
+     - Returns ranked results with metadata
+   
+   - **WebSearch Agent**:
+     - Performs web search using external APIs
+     - Processes and normalizes results
+     - Adds source attribution
 
 4. **Result Processing**
-   - Results are aggregated from all sources
-   - Duplicates are removed
-   - Relevance scores are calculated
-   - Results are ranked by quality
+   - Combines results from multiple sources
+   - Removes duplicates based on content similarity
+   - Calculates relevance scores
+   - Ranks results by relevance and source quality
 
 5. **Context Management**
-   - Conversation history is updated
-   - User preferences are maintained
-   - Search context is preserved
-   - Session information is tracked
+   - Updates conversation history
+   - Maintains user preferences
+   - Stores search context for future queries
+   - Tracks session information
 
 6. **Response Generation**
-   - Results are formatted for display
-   - Follow-up suggestions are generated
-   - Source attribution is included
-   - Final response is prepared
+   - Formats results for display
+   - Generates follow-up suggestions
+   - Prepares final response with metadata
+   - Includes source attribution
 
-#### 3.5 Communication Flow
+### Agent Communication Protocol
 
-1. **Initial Query**
-   ```
-   User → Coordinator: Submit Query
-   Coordinator → Memory: Check Context
-   Memory → Coordinator: Return Context
-   ```
+```mermaid
+sequenceDiagram
+    participant User
+    participant Coordinator
+    participant DBAgent
+    participant WebAgent
+    participant Memory
 
-2. **Search Execution**
-   ```
-   Coordinator → DBAgent: Search Request
-   DBAgent → Coordinator: Local Results
-   Coordinator → WebAgent: Search Request
-   WebAgent → Coordinator: Web Results
-   ```
+    User->>Coordinator: Submit Query
+    Coordinator->>Memory: Check Context
+    Memory-->>Coordinator: Return Context
 
-3. **Result Processing**
-   ```
-   Coordinator → Memory: Update Context
-   Coordinator → User: Combined Results
-   ```
+    alt Local First Strategy
+        Coordinator->>DBAgent: Search Request
+        DBAgent-->>Coordinator: Local Results
+        Coordinator->>WebAgent: Fallback Search
+        WebAgent-->>Coordinator: Web Results
+    else Web First Strategy
+        Coordinator->>WebAgent: Search Request
+        WebAgent-->>Coordinator: Web Results
+        Coordinator->>DBAgent: Supplementary Search
+        DBAgent-->>Coordinator: Local Results
+    else Parallel Strategy
+        Coordinator->>DBAgent: Search Request
+        Coordinator->>WebAgent: Search Request
+        DBAgent-->>Coordinator: Local Results
+        WebAgent-->>Coordinator: Web Results
+    end
 
-#### 3.6 Error Handling
+    Coordinator->>Memory: Update Context
+    Coordinator-->>User: Combined Results
+```
 
-- **DBSearch Failures**
-  - Fallback to web search
-  - Retry mechanism
-  - Error logging
+### Agent State Management
 
-- **WebSearch Failures**
-  - Fallback to local results
-  - Rate limit handling
-  - API error recovery
-
-- **Coordinator Failures**
-  - State preservation
-  - Recovery procedures
-  - User notification
-
-#### 3.7 Performance Optimization
-
-- **Caching**
-  - Frequently accessed results
-  - User preferences
-  - Search patterns
-
-- **Load Balancing**
-  - Distributed search tasks
-  - Resource management
-  - Concurrent request handling
-
-- **Result Prioritization**
-  - Relevance scoring
-  - Source quality
-  - User preferences
-
-This workflow ensures efficient collaboration between agents while maintaining high-quality search results and optimal performance.
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> Analyzing: Receive Query
+    Analyzing --> LocalSearch: Local First
+    Analyzing --> WebSearch: Web First
+    Analyzing --> ParallelSearch: Parallel
+    LocalSearch --> Processing: Results Ready
+    WebSearch --> Processing: Results Ready
+    ParallelSearch --> Processing: All Results Ready
+    Processing --> ContextUpdate: Results Processed
+    ContextUpdate --> ResponseReady: Context Updated
+    ResponseReady --> Idle: Response Sent
+```
 
 ### 4. Memory Management Workflow
 
