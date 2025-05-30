@@ -844,4 +844,332 @@ class CoordinatorAgent {
   - User feedback (e.g., upvotes/downvotes, explicit ratings)
   - Cases where no relevant results are found
 - Flag low-performing queries or documents for review and improvement.
-- Use this data to retrain models, refine embeddings, or update document processing pipelines. 
+- Use this data to retrain models, refine embeddings, or update document processing pipelines.
+
+### Supabase Vector Extension Setup
+
+1. **Enable Vector Extension**
+   ```sql
+   -- Enable the vector extension
+   create extension if not exists vector;
+   ```
+
+2. **Create Vector Search Function**
+   ```sql
+   -- Create a function to handle similarity search
+   create or replace function match_documents (
+     query_embedding vector(1536),
+     match_threshold float,
+     match_count int
+   )
+   returns table (
+     id uuid,
+     content text,
+     metadata jsonb,
+     similarity float
+   )
+   language plpgsql
+   as $$
+   begin
+     return query
+     select
+       id,
+       content,
+       metadata,
+       1 - (documents.embedding <=> query_embedding) as similarity
+     from documents
+     where 1 - (documents.embedding <=> query_embedding) > match_threshold
+     order by similarity desc
+     limit match_count;
+   end;
+   $$;
+   ```
+
+3. **Create Index for Vector Search**
+   ```sql
+   -- Create an index for faster similarity search
+   create index on documents 
+   using ivfflat (embedding vector_cosine_ops)
+   with (lists = 100);
+   ```
+
+4. **Verify Installation**
+   ```sql
+   -- Check if vector extension is enabled
+   select * from pg_extension where extname = 'vector';
+   ```
+
+### Important Notes:
+- The vector extension requires PostgreSQL 12 or later
+- The embedding dimension (1536) should match your model's output dimension
+- The index type (ivfflat) is optimized for approximate nearest neighbor search
+- The number of lists (100) can be adjusted based on your data size 
+
+### Vector Dimensions and Embedding Models
+
+The vector dimension of 1536 is specifically chosen because:
+
+1. **OpenAI's text-embedding-ada-002 Model**
+   - Output dimension: 1536
+   - This is the standard embedding model used in many applications
+   - Provides high-quality semantic embeddings for text
+
+2. **Why 1536?**
+   - The dimension represents the number of features in the embedding
+   - Higher dimensions can capture more nuanced semantic relationships
+   - 1536 is a good balance between:
+     - Representation power
+     - Computational efficiency
+     - Storage requirements
+
+3. **Alternative Models and Dimensions**
+   ```sql
+   -- For different embedding models, adjust the dimension:
+   -- OpenAI text-embedding-3-small: 1536
+   -- OpenAI text-embedding-3-large: 3072
+   -- BERT base: 768
+   -- Sentence-BERT: 768
+   ```
+
+4. **Important Considerations**
+   - The vector dimension must match your embedding model's output
+   - All embeddings in the same database must use the same dimension
+   - Changing dimensions requires:
+     - Updating the table schema
+     - Regenerating all embeddings
+     - Recreating the vector index
+
+### Embedding Model Selection and Implementation Guide
+
+1. **Choosing the Right Embedding Model**
+
+   a. **Model Types and Use Cases**
+   ```typescript
+   // Common embedding models and their characteristics:
+   const embeddingModels = {
+     'text-embedding-ada-002': {
+       dimension: 1536,
+       useCase: 'General purpose, good balance of speed and accuracy',
+       cost: 'Low',
+       maxTokens: 8191
+     },
+     'text-embedding-3-small': {
+       dimension: 1536,
+       useCase: 'Improved performance over ada-002',
+       cost: 'Low',
+       maxTokens: 8191
+     },
+     'text-embedding-3-large': {
+       dimension: 3072,
+       useCase: 'Highest accuracy, complex semantic relationships',
+       cost: 'High',
+       maxTokens: 8191
+     },
+     'sentence-transformers': {
+       dimension: 768,
+       useCase: 'Open source, good for specific domains',
+       cost: 'Free',
+       maxTokens: 512
+     }
+   };
+   ```
+
+   b. **Selection Criteria**
+   - **Accuracy Requirements**: Higher dimensions (3072) for complex semantic matching
+   - **Performance Needs**: Lower dimensions (768) for faster processing
+   - **Cost Considerations**: Balance between model cost and performance
+   - **Token Limits**: Consider maximum input length for your documents
+
+2. **Implementation Steps**
+
+   a. **Database Setup**
+   ```sql
+   -- 1. Create table with appropriate vector dimension
+   create table documents (
+     id uuid default uuid_generate_v4() primary key,
+     content text,
+     metadata jsonb,
+     embedding vector(1536), -- Match your chosen model's dimension
+     created_at timestamp with time zone default timezone('utc'::text, now())
+   );
+
+   -- 2. Create index for the chosen dimension
+   create index on documents 
+   using ivfflat (embedding vector_cosine_ops)
+   with (lists = 100);
+   ```
+
+   b. **Code Implementation**
+   ```typescript
+   // Example implementation with OpenAI's embedding model
+   import { OpenAIEmbeddings } from 'langchain/embeddings/openai';
+   import { supabase } from '../lib/supabase';
+
+   class DocumentProcessor {
+     private embeddings: OpenAIEmbeddings;
+
+     constructor() {
+       this.embeddings = new OpenAIEmbeddings({
+         modelName: 'text-embedding-ada-002',
+         dimensions: 1536
+       });
+     }
+
+     async processDocument(content: string) {
+       // Generate embedding
+       const embedding = await this.embeddings.embedQuery(content);
+
+       // Store in Supabase
+       const { data, error } = await supabase
+         .from('documents')
+         .insert({
+           content,
+           embedding,
+           metadata: {
+             model: 'text-embedding-ada-002',
+             processed_at: new Date().toISOString()
+           }
+         });
+
+       if (error) throw error;
+       return data;
+     }
+   }
+   ```
+
+3. **Handling Model Changes**
+
+   a. **Migration Process**
+   ```sql
+   -- 1. Create new table with new dimension
+   create table documents_new (
+     id uuid default uuid_generate_v4() primary key,
+     content text,
+     metadata jsonb,
+     embedding vector(3072), -- New dimension
+     created_at timestamp with time zone default timezone('utc'::text, now())
+   );
+
+   -- 2. Create new index
+   create index on documents_new 
+   using ivfflat (embedding vector_cosine_ops)
+   with (lists = 100);
+
+   -- 3. Migrate data (run in batches)
+   insert into documents_new (content, metadata, embedding)
+   select 
+     content,
+     metadata,
+     -- Convert embeddings to new dimension
+     embedding::vector(3072)
+   from documents
+   where id in (
+     select id from documents
+     order by created_at
+     limit 1000
+   );
+   ```
+
+   b. **Code Migration**
+   ```typescript
+   class EmbeddingMigrator {
+     private oldEmbeddings: OpenAIEmbeddings;
+     private newEmbeddings: OpenAIEmbeddings;
+
+     constructor() {
+       this.oldEmbeddings = new OpenAIEmbeddings({
+         modelName: 'text-embedding-ada-002',
+         dimensions: 1536
+       });
+       this.newEmbeddings = new OpenAIEmbeddings({
+         modelName: 'text-embedding-3-large',
+         dimensions: 3072
+       });
+     }
+
+     async migrateDocument(content: string) {
+       // Generate new embedding
+       const newEmbedding = await this.newEmbeddings.embedQuery(content);
+       
+       // Update in database
+       await supabase
+         .from('documents_new')
+         .insert({
+           content,
+           embedding: newEmbedding,
+           metadata: {
+             migrated_from: 'text-embedding-ada-002',
+             migrated_at: new Date().toISOString()
+           }
+         });
+     }
+   }
+   ```
+
+4. **Performance Optimization**
+
+   a. **Index Tuning**
+   ```sql
+   -- Adjust number of lists based on data size
+   -- More lists = faster search but more memory
+   create index on documents 
+   using ivfflat (embedding vector_cosine_ops)
+   with (lists = 200); -- Increased from 100 for larger datasets
+   ```
+
+   b. **Batch Processing**
+   ```typescript
+   class BatchProcessor {
+     async processBatch(documents: string[]) {
+       // Process in parallel with rate limiting
+       const batchSize = 10;
+       const batches = [];
+       
+       for (let i = 0; i < documents.length; i += batchSize) {
+         batches.push(documents.slice(i, i + batchSize));
+       }
+
+       for (const batch of batches) {
+         await Promise.all(
+           batch.map(doc => this.processDocument(doc))
+         );
+         // Rate limiting
+         await new Promise(resolve => setTimeout(resolve, 1000));
+       }
+     }
+   }
+   ```
+
+5. **Monitoring and Maintenance**
+
+   a. **Performance Metrics**
+   ```sql
+   -- Monitor index performance
+   select 
+     schemaname,
+     tablename,
+     indexname,
+     idx_scan,
+     idx_tup_read,
+     idx_tup_fetch
+   from pg_stat_user_indexes
+   where indexname = 'documents_embedding_idx';
+   ```
+
+   b. **Quality Checks**
+   ```typescript
+   class EmbeddingQualityChecker {
+     async checkQuality(query: string, results: SearchResult[]) {
+       // Verify semantic relevance
+       const queryEmbedding = await this.embeddings.embedQuery(query);
+       
+       return results.map(result => ({
+         ...result,
+         semanticScore: this.calculateCosineSimilarity(
+           queryEmbedding,
+           result.embedding
+         )
+       }));
+     }
+   }
+   ```
