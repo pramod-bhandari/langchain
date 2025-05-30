@@ -393,6 +393,84 @@ graph TD
     H --> I[Source Attribution]
     I --> J[Context Update]
     J --> K[Response Generation]
+
+    subgraph "Task Analysis"
+        B1[Query Understanding] --> B2[Intent Classification]
+        B2 --> B3[Strategy Selection]
+    end
+
+    subgraph "Search Strategy"
+        C1[Local DB Priority] --> C2[Web Search Priority]
+        C1 --> C3[Hybrid Search]
+    end
+
+    subgraph "Result Processing"
+        G1[Result Aggregation] --> G2[Deduplication]
+        G2 --> G3[Relevance Scoring]
+        G3 --> G4[Result Ranking]
+    end
+
+    subgraph "Context Management"
+        J1[Update Conversation History] --> J2[Update User Preferences]
+        J2 --> J3[Update Search Context]
+    end
+
+    subgraph "Response Generation"
+        K1[Format Results] --> K2[Generate Suggestions]
+        K2 --> K3[Prepare Response]
+    end
+```
+
+### Agent Communication Protocol
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Coordinator
+    participant DBAgent
+    participant WebAgent
+    participant Memory
+
+    User->>Coordinator: Submit Query
+    Coordinator->>Memory: Check Context
+    Memory-->>Coordinator: Return Context
+
+    alt Local First Strategy
+        Coordinator->>DBAgent: Search Request
+        DBAgent-->>Coordinator: Local Results
+        Coordinator->>WebAgent: Fallback Search
+        WebAgent-->>Coordinator: Web Results
+    else Web First Strategy
+        Coordinator->>WebAgent: Search Request
+        WebAgent-->>Coordinator: Web Results
+        Coordinator->>DBAgent: Supplementary Search
+        DBAgent-->>Coordinator: Local Results
+    else Parallel Strategy
+        Coordinator->>DBAgent: Search Request
+        Coordinator->>WebAgent: Search Request
+        DBAgent-->>Coordinator: Local Results
+        WebAgent-->>Coordinator: Web Results
+    end
+
+    Coordinator->>Memory: Update Context
+    Coordinator-->>User: Combined Results
+```
+
+### Agent State Management
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> Analyzing: Receive Query
+    Analyzing --> LocalSearch: Local First
+    Analyzing --> WebSearch: Web First
+    Analyzing --> ParallelSearch: Parallel
+    LocalSearch --> Processing: Results Ready
+    WebSearch --> Processing: Results Ready
+    ParallelSearch --> Processing: All Results Ready
+    Processing --> ContextUpdate: Results Processed
+    ContextUpdate --> ResponseReady: Context Updated
+    ResponseReady --> Idle: Response Sent
 ```
 
 ### 4. Memory Management Workflow
