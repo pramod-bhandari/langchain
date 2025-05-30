@@ -376,102 +376,51 @@ graph TD
 
 ### 3. Agent Collaboration Workflow
 
-```mermaid
-graph TD
-    A[Coordinator Agent] --> B[Task Analysis]
-    B --> C{Search Strategy}
-    
-    C -->|Local First| D[DBSearch Agent]
-    C -->|Web First| E[WebSearch Agent]
-    C -->|Parallel| F[Both Agents]
-    
-    D --> G[Result Processing]
-    E --> G
-    F --> G
-    
-    G --> H[Result Validation]
-    H --> I[Source Attribution]
-    I --> J[Context Update]
-    J --> K[Response Generation]
+#### Multi-Agent Communication Flow
 
-    subgraph "Task Analysis"
-        B1[Query Understanding] --> B2[Intent Classification]
-        B2 --> B3[Strategy Selection]
-    end
-
-    subgraph "Search Strategy"
-        C1[Local DB Priority] --> C2[Web Search Priority]
-        C1 --> C3[Hybrid Search]
-    end
-
-    subgraph "Result Processing"
-        G1[Result Aggregation] --> G2[Deduplication]
-        G2 --> G3[Relevance Scoring]
-        G3 --> G4[Result Ranking]
-    end
-
-    subgraph "Context Management"
-        J1[Update Conversation History] --> J2[Update User Preferences]
-        J2 --> J3[Update Search Context]
-    end
-
-    subgraph "Response Generation"
-        K1[Format Results] --> K2[Generate Suggestions]
-        K2 --> K3[Prepare Response]
-    end
+```
+USER INTERACTION LAYER
+ ├─ Query Submission: User submits natural language questions
+ └─ Scrape Request: User requests scraping of specific websites
+      ↓
+CONTROLLER AGENT LAYER
+ ├─ Analyzes user request intent
+ ├─ Routes requests to appropriate specialized agents
+ ├─ Handles disambiguation when intent or entities are unclear
+ ├─ Coordinates authentication when needed
+ ├─ Aggregates responses from multiple agents
+ └─ Formats final response for user
+      ↓
+SPECIALIZED AGENTS
+ ├─ QUERY AGENT: Analyzes questions, decomposes queries, plans retrieval
+ ├─ RETRIEVAL AGENT: Executes search, ranks results, filters info
+ ├─ SCRAPER AGENT: Navigates websites, extracts content, handles auth
+ └─ KNOWLEDGE AGENT: Analyzes content, extracts entities, finds relations
 ```
 
-### Agent Communication Protocol
+#### Layered Agent Collaboration Details
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant Coordinator
-    participant DBAgent
-    participant WebAgent
-    participant Memory
+- **User Interaction Layer**
+  - Users submit queries or scraping requests via the interface.
 
-    User->>Coordinator: Submit Query
-    Coordinator->>Memory: Check Context
-    Memory-->>Coordinator: Return Context
+- **Controller Agent Layer**
+  - Receives all user requests.
+  - Determines intent and required actions.
+  - Routes requests to the correct specialized agent(s).
+  - Handles ambiguity and coordinates authentication if needed.
+  - Aggregates and formats responses for the user.
 
-    alt Local First Strategy
-        Coordinator->>DBAgent: Search Request
-        DBAgent-->>Coordinator: Local Results
-        Coordinator->>WebAgent: Fallback Search
-        WebAgent-->>Coordinator: Web Results
-    else Web First Strategy
-        Coordinator->>WebAgent: Search Request
-        WebAgent-->>Coordinator: Web Results
-        Coordinator->>DBAgent: Supplementary Search
-        DBAgent-->>Coordinator: Local Results
-    else Parallel Strategy
-        Coordinator->>DBAgent: Search Request
-        Coordinator->>WebAgent: Search Request
-        DBAgent-->>Coordinator: Local Results
-        WebAgent-->>Coordinator: Web Results
-    end
+- **Specialized Agents**
+  - **Query Agent**: Breaks down and interprets user questions.
+  - **Retrieval Agent**: Searches databases or indexes, ranks and filters results.
+  - **Scraper Agent**: Fetches and extracts data from external websites.
+  - **Knowledge Agent**: Analyzes and enriches content, extracts entities and relationships.
 
-    Coordinator->>Memory: Update Context
-    Coordinator-->>User: Combined Results
-```
-
-### Agent State Management
-
-```mermaid
-stateDiagram-v2
-    [*] --> Idle
-    Idle --> Analyzing: Receive Query
-    Analyzing --> LocalSearch: Local First
-    Analyzing --> WebSearch: Web First
-    Analyzing --> ParallelSearch: Parallel
-    LocalSearch --> Processing: Results Ready
-    WebSearch --> Processing: Results Ready
-    ParallelSearch --> Processing: All Results Ready
-    Processing --> ContextUpdate: Results Processed
-    ContextUpdate --> ResponseReady: Context Updated
-    ResponseReady --> Idle: Response Sent
-```
+- **Collaboration Flow**
+  - The Controller Agent is the central coordinator.
+  - It may invoke one or more specialized agents per request.
+  - Specialized agents do not communicate directly; all coordination is via the Controller.
+  - The Controller collects all agent outputs, merges and formats them, and returns the final answer to the user.
 
 ### 4. Memory Management Workflow
 
