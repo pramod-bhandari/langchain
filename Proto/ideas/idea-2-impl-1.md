@@ -74,7 +74,7 @@ sequenceDiagram
 ### 1. Frontend (Next.js)
 
 ```typescript
-// pages/index.tsx
+// app/types/index.ts
 interface SearchState {
   query: string;
   results: SearchResult[];
@@ -82,23 +82,50 @@ interface SearchState {
   context: ConversationContext;
 }
 
-// components/FileUpload.tsx
+// components/ui/file-upload.tsx
 interface FileUploadProps {
   onUpload: (file: File) => Promise<void>;
   supportedFormats: string[];
+  className?: string; // For Tailwind CSS classes
 }
 
-// components/SearchInterface.tsx
+// components/ui/search-interface.tsx
 interface SearchInterfaceProps {
   onSearch: (query: string) => Promise<void>;
   context: ConversationContext;
+  className?: string; // For Tailwind CSS classes
 }
 
-// components/ResultsDisplay.tsx
+// components/ui/results-display.tsx
 interface ResultsDisplayProps {
   results: SearchResult[];
   sources: Source[];
   suggestions: string[];
+  className?: string; // For Tailwind CSS classes
+}
+
+// Example component implementation with shadcn/ui
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+
+// components/ui/search-interface.tsx
+export function SearchInterface({ onSearch, context, className }: SearchInterfaceProps) {
+  return (
+    <div className={cn("w-full max-w-2xl mx-auto", className)}>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Input
+          type="text"
+          placeholder="Enter your search query..."
+          className="w-full"
+        />
+        <Button type="submit" className="w-full">
+          Search
+        </Button>
+      </form>
+    </div>
+  );
 }
 ```
 
@@ -212,12 +239,14 @@ create table conversation_memory (
 1. **Project Setup**
    ```bash
    # Create Next.js 14 project
-   npx create-next-app@latest doc-search --typescript --use-npm
+   npx create-next-app@latest doc-search --typescript --tailwind --eslint
    cd doc-search
    
    # Install dependencies
    npm install @supabase/supabase-js langchain
-   npm install @chakra-ui/react @emotion/react @emotion/styled
+   
+   # Install shadcn/ui
+   npx shadcn-ui@latest init
    ```
 
 2. **Environment Configuration**
@@ -231,8 +260,9 @@ create table conversation_memory (
 3. **Development Phases**
 
    a. **Phase 1: Basic Infrastructure**
-   - Set up Next.js project structure
+   - Set up Next.js project structure with App Router
    - Configure Supabase connection
+   - Set up shadcn/ui components
    - Implement basic file upload
    - Create vector store integration
 
@@ -249,10 +279,10 @@ create table conversation_memory (
    - Implement session handling
 
    d. **Phase 4: UI/UX**
-   - Create responsive layout
-   - Implement search interface
-   - Add result display
-   - Create suggestion system
+   - Create responsive layout with Tailwind CSS
+   - Implement search interface using shadcn/ui components
+   - Add result display with modern UI components
+   - Create suggestion system with interactive elements
 
 ### 6. Testing Strategy
 
@@ -549,8 +579,8 @@ graph TD
 ## Notes
 
 - **Vector Embeddings:** Supabase with the vector extension is sufficient for storing and searching embeddings. Pinecone is not required unless you need external, dedicated vector DB features.
-- **UI Animations:** Next.js 14 uses React. framer-motion is optional and not required unless you want advanced UI animations.
-- **Stack:** Next.js 14, Supabase (with vector), LangChain.js, Chakra UI, Emotion. 
+- **UI Stack:** Next.js 14 (App Router), Tailwind CSS, shadcn/ui, Supabase (with vector), LangChain.js
+- **Styling:** Using Tailwind CSS for utility-first styling and shadcn/ui for pre-built, accessible components
 
 ## User and Session Tracking
 
