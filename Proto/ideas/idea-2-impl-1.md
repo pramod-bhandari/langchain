@@ -376,71 +376,135 @@ graph TD
 
 ### 3. Agent Collaboration Workflow
 
-The agent system is designed with a coordinator-based architecture where different specialized agents work together to provide comprehensive search results. Here's how they collaborate:
+The agent collaboration workflow is designed to provide efficient and comprehensive search results through coordinated interaction between different specialized agents. Here's how the agents work together:
 
-1. **Coordinator Agent (Main Controller)**
-   - Acts as the central orchestrator
-   - Receives and analyzes user queries
-   - Determines search strategy based on query type
-   - Manages communication between agents
-   - Handles result aggregation and ranking
-   - Maintains conversation context
+#### 3.1 Coordinator Agent
+- Acts as the central orchestrator for all search operations
+- Receives and analyzes user queries
+- Determines the optimal search strategy
+- Manages communication between agents
+- Handles result aggregation and ranking
 
-2. **DBSearch Agent (Local Search)**
-   - Specializes in searching the local Supabase vector store
-   - Handles semantic search queries
-   - Processes document embeddings
-   - Returns ranked results with metadata
-   - Communicates results back to Coordinator
+#### 3.2 DBSearch Agent
+- Specializes in searching the local Supabase vector store
+- Performs semantic search using embeddings
+- Returns ranked results with metadata
+- Handles document retrieval and processing
+- Maintains connection with the vector database
 
-3. **WebSearch Agent (External Search)**
-   - Manages external web searches
-   - Processes and normalizes web results
-   - Adds source attribution
-   - Returns formatted web search results
-   - Communicates with Coordinator for result integration
+#### 3.3 WebSearch Agent
+- Manages external web searches
+- Processes and normalizes web results
+- Adds source attribution
+- Handles rate limiting and API management
+- Ensures result quality and relevance
 
-4. **Collaboration Flow**
-   - User submits query to Coordinator
-   - Coordinator analyzes query and determines strategy:
-     * Local First: Prioritizes database search
-     * Web First: Prioritizes web search
-     * Parallel: Executes both searches simultaneously
-   - Selected agents execute their search tasks
-   - Results are aggregated and deduplicated
-   - Final results are ranked and returned
+#### 3.4 Collaboration Process
 
-5. **Result Processing**
-   - Results from multiple sources are combined
-   - Duplicate content is removed
+1. **Query Reception & Analysis**
+   - Coordinator receives the search query
+   - Analyzes query intent and complexity
+   - Determines optimal search strategy
+   - Considers user context and preferences
+
+2. **Strategy Selection**
+   - **Local First**: Prioritizes database search
+     - Immediate access to known information
+     - Faster response times
+     - Lower resource usage
+   
+   - **Web First**: Prioritizes web search
+     - Access to latest information
+     - Broader coverage
+     - Real-time data
+   
+   - **Parallel**: Executes both searches
+     - Comprehensive results
+     - Balanced approach
+     - Maximum coverage
+
+3. **Search Execution**
+   - Coordinator delegates search tasks
+   - Agents execute searches independently
+   - Results are collected and processed
+   - Quality checks are performed
+
+4. **Result Processing**
+   - Results are aggregated from all sources
+   - Duplicates are removed
    - Relevance scores are calculated
-   - Results are ranked by relevance
-   - Source attribution is maintained
+   - Results are ranked by quality
 
-6. **Context Management**
-   - Conversation history is maintained
-   - User preferences are tracked
+5. **Context Management**
+   - Conversation history is updated
+   - User preferences are maintained
    - Search context is preserved
-   - Session information is managed
+   - Session information is tracked
 
-7. **Error Handling**
-   - Failed searches are logged
-   - Fallback strategies are implemented
-   - Error recovery procedures are in place
-   - User feedback is provided
+6. **Response Generation**
+   - Results are formatted for display
+   - Follow-up suggestions are generated
+   - Source attribution is included
+   - Final response is prepared
 
-8. **Performance Optimization**
-   - Parallel processing when possible
-   - Caching of frequent queries
-   - Result deduplication
-   - Efficient resource utilization
+#### 3.5 Communication Flow
 
-This collaborative architecture ensures:
-- Comprehensive search coverage
-- Efficient resource utilization
-- Scalable search capabilities
-- Reliable result delivery
-- Context-aware responses
+1. **Initial Query**
+   ```
+   User → Coordinator: Submit Query
+   Coordinator → Memory: Check Context
+   Memory → Coordinator: Return Context
+   ```
+
+2. **Search Execution**
+   ```
+   Coordinator → DBAgent: Search Request
+   DBAgent → Coordinator: Local Results
+   Coordinator → WebAgent: Search Request
+   WebAgent → Coordinator: Web Results
+   ```
+
+3. **Result Processing**
+   ```
+   Coordinator → Memory: Update Context
+   Coordinator → User: Combined Results
+   ```
+
+#### 3.6 Error Handling
+
+- **DBSearch Failures**
+  - Fallback to web search
+  - Retry mechanism
+  - Error logging
+
+- **WebSearch Failures**
+  - Fallback to local results
+  - Rate limit handling
+  - API error recovery
+
+- **Coordinator Failures**
+  - State preservation
+  - Recovery procedures
+  - User notification
+
+#### 3.7 Performance Optimization
+
+- **Caching**
+  - Frequently accessed results
+  - User preferences
+  - Search patterns
+
+- **Load Balancing**
+  - Distributed search tasks
+  - Resource management
+  - Concurrent request handling
+
+- **Result Prioritization**
+  - Relevance scoring
+  - Source quality
+  - User preferences
+
+This workflow ensures efficient collaboration between agents while maintaining high-quality search results and optimal performance.
 
 ### 4. Memory Management Workflow
 
