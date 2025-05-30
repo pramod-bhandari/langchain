@@ -376,51 +376,71 @@ graph TD
 
 ### 3. Agent Collaboration Workflow
 
-#### Multi-Agent Communication Flow
+The agent system is designed with a coordinator-based architecture where different specialized agents work together to provide comprehensive search results. Here's how they collaborate:
 
-```
-USER INTERACTION LAYER
- ├─ Query Submission: User submits natural language questions
- └─ Scrape Request: User requests scraping of specific websites
-      ↓
-CONTROLLER AGENT LAYER
- ├─ Analyzes user request intent
- ├─ Routes requests to appropriate specialized agents
- ├─ Handles disambiguation when intent or entities are unclear
- ├─ Coordinates authentication when needed
- ├─ Aggregates responses from multiple agents
- └─ Formats final response for user
-      ↓
-SPECIALIZED AGENTS
- ├─ QUERY AGENT: Analyzes questions, decomposes queries, plans retrieval
- ├─ RETRIEVAL AGENT: Executes search, ranks results, filters info
- ├─ SCRAPER AGENT: Navigates websites, extracts content, handles auth
- └─ KNOWLEDGE AGENT: Analyzes content, extracts entities, finds relations
-```
+1. **Coordinator Agent (Main Controller)**
+   - Acts as the central orchestrator
+   - Receives and analyzes user queries
+   - Determines search strategy based on query type
+   - Manages communication between agents
+   - Handles result aggregation and ranking
+   - Maintains conversation context
 
-#### Layered Agent Collaboration Details
+2. **DBSearch Agent (Local Search)**
+   - Specializes in searching the local Supabase vector store
+   - Handles semantic search queries
+   - Processes document embeddings
+   - Returns ranked results with metadata
+   - Communicates results back to Coordinator
 
-- **User Interaction Layer**
-  - Users submit queries or scraping requests via the interface.
+3. **WebSearch Agent (External Search)**
+   - Manages external web searches
+   - Processes and normalizes web results
+   - Adds source attribution
+   - Returns formatted web search results
+   - Communicates with Coordinator for result integration
 
-- **Controller Agent Layer**
-  - Receives all user requests.
-  - Determines intent and required actions.
-  - Routes requests to the correct specialized agent(s).
-  - Handles ambiguity and coordinates authentication if needed.
-  - Aggregates and formats responses for the user.
+4. **Collaboration Flow**
+   - User submits query to Coordinator
+   - Coordinator analyzes query and determines strategy:
+     * Local First: Prioritizes database search
+     * Web First: Prioritizes web search
+     * Parallel: Executes both searches simultaneously
+   - Selected agents execute their search tasks
+   - Results are aggregated and deduplicated
+   - Final results are ranked and returned
 
-- **Specialized Agents**
-  - **Query Agent**: Breaks down and interprets user questions.
-  - **Retrieval Agent**: Searches databases or indexes, ranks and filters results.
-  - **Scraper Agent**: Fetches and extracts data from external websites.
-  - **Knowledge Agent**: Analyzes and enriches content, extracts entities and relationships.
+5. **Result Processing**
+   - Results from multiple sources are combined
+   - Duplicate content is removed
+   - Relevance scores are calculated
+   - Results are ranked by relevance
+   - Source attribution is maintained
 
-- **Collaboration Flow**
-  - The Controller Agent is the central coordinator.
-  - It may invoke one or more specialized agents per request.
-  - Specialized agents do not communicate directly; all coordination is via the Controller.
-  - The Controller collects all agent outputs, merges and formats them, and returns the final answer to the user.
+6. **Context Management**
+   - Conversation history is maintained
+   - User preferences are tracked
+   - Search context is preserved
+   - Session information is managed
+
+7. **Error Handling**
+   - Failed searches are logged
+   - Fallback strategies are implemented
+   - Error recovery procedures are in place
+   - User feedback is provided
+
+8. **Performance Optimization**
+   - Parallel processing when possible
+   - Caching of frequent queries
+   - Result deduplication
+   - Efficient resource utilization
+
+This collaborative architecture ensures:
+- Comprehensive search coverage
+- Efficient resource utilization
+- Scalable search capabilities
+- Reliable result delivery
+- Context-aware responses
 
 ### 4. Memory Management Workflow
 
