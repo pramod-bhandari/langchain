@@ -1,0 +1,297 @@
+"use client";
+
+import React, { useState, useEffect } from "react";
+import { extractPdfText } from "@/app/lib/processors/pdfExtractor";
+import { chunkText } from "@/app/lib/processors/textChunker";
+import { useDocumentStore } from "@/app/store/documentStore";
+import DocumentProcessorWorkerService from "@/app/lib/processors/documentProcessorWorkerService";
+import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
+
+interface ClientDocumentProcessorProps {
+  documentId?: string;
+  file: File;
+  onProcessingProgress?: (progress: number, message: string) => void;
+  onProcessingComplete?: (data: any) => void;
+}
+
+const ClientDocumentProcessor: React.FC<ClientDocumentProcessorProps> = ({
+  documentId,
+  file,
+  onProcessingProgress,
+  onProcessingComplete,
+}) => {
+  const [status, setStatus] = useState<
+    "idle" | "processing" | "completed" | "error"
+  >("idle");
+  const [progress, setProgress] = useState<number>(0);
+  const [error, setError] = useState<string | null>(null);
+  const [workerSupported, setWorkerSupported] = useState<boolean>(false);
+  const { updateDocumentStatus } = useDocumentStore();
+  const [message, setMessage] = useState<string>("");
+
+  // Check if web workers are supported
+  useEffect(() => {
+    setWorkerSupported(typeof Worker !== "undefined");
+  }, []);
+
+  // Setup polling for document status
+  useEffect(() => {
+    let statusCheckInterval: NodeJS.Timeout | null = null;
+
+    if (documentId && status === "processing" && workerSupported) {
+      statusCheckInterval = setInterval(async () => {
+        try {
+          const response = await fetch(
+            `/api/documents/status?id=${documentId}`
+          );
+          const data = await response.json();
+
+          if (data.status === "completed") {
+            setStatus("completed");
+            setProgress(100);
+            onProcessingProgress?.(100, "Processing complete");
+            onProcessingComplete?.(true);
+            if (statusCheckInterval) clearInterval(statusCheckInterval);
+          } else if (data.status === "error") {
+            setStatus("error");
+            setError(data.error || "Processing failed");
+            onProcessingProgress?.(0, "Processing failed");
+            onProcessingComplete?.(false);
+            if (statusCheckInterval) clearInterval(statusCheckInterval);
+          } else if (data.progress) {
+            setProgress(data.progress * 100);
+            onProcessingProgress?.(
+              data.progress * 100,
+              data.message || "Processing..."
+            );
+          }
+        } catch (error) {
+          console.error("Error checking document status:", error);
+        }
+      }, 2000);
+    }
+
+    return () => {
+      if (statusCheckInterval) clearInterval(statusCheckInterval);
+    };
+  }, [
+    documentId,
+    status,
+    workerSupported,
+    onProcessingProgress,
+    onProcessingComplete,
+  ]);
+
+  const processFile = async (file: File) => {
+    if (!file) return;
+
+    setStatus("processing");
+    setMessage("Starting text extraction...");
+    setProgress(10);
+    if (onProcessingProgress) {
+      onProcessingProgress(10, "Starting text extraction...");
+    }
+
+    try {
+      console.log(
+        `CLIENT PROCESSOR: Starting extraction for ${file.name} (${file.type}, ${file.size} bytes)`
+      );
+
+      // Extract text from the file
+      let extractedText = "";
+      try {
+        console.log("CLIENT PROCESSOR: Calling extractPdfText");
+        extractedText = await extractPdfText(file);
+        console.log(
+          `CLIENT PROCESSOR: Extraction successful, got ${extractedText.length} characters`
+        );
+        console.log(
+          `CLIENT PROCESSOR: Sample text: "${extractedText.substring(
+            0,
+            100
+          )}..."`
+        );
+      } catch (extractError) {
+        console.error("CLIENT PROCESSOR: PDF extraction error:", extractError);
+        setError(
+          `Extraction error: ${
+            extractError instanceof Error
+              ? extractError.message
+              : "Unknown error"
+          }`
+        );
+        return;
+      }
+
+      setProgress(40);
+      setMessage(
+        `Text extracted (${extractedText.length} characters). Chunking...`
+      );
+      if (onProcessingProgress) {
+        onProcessingProgress(
+          40,
+          `Text extracted (${extractedText.length} characters). Chunking...`
+        );
+      }
+
+      // Split the text into chunks
+      const splitter = new RecursiveCharacterTextSplitter({
+        chunkSize: 1000,
+        chunkOverlap: 200,
+      });
+
+      console.log("CLIENT PROCESSOR: Creating chunks");
+      const docs = await splitter.createDocuments([extractedText]);
+      const chunks = docs.map((doc: any) => doc.pageContent);
+      console.log(`CLIENT PROCESSOR: Created ${chunks.length} chunks`);
+
+      // Sample chunks
+      if (chunks.length > 0) {
+        console.log(
+          `CLIENT PROCESSOR: First chunk sample: "${chunks[0].substring(
+            0,
+            50
+          )}..."`
+        );
+      }
+
+      setProgress(60);
+      setMessage(`Created ${chunks.length} text chunks. Uploading...`);
+      if (onProcessingProgress) {
+        onProcessingProgress(
+          60,
+          `Created ${chunks.length} text chunks. Uploading...`
+        );
+      }
+
+      // Prepare metadata
+      const metadata = {
+        extractionMethod: "client-side",
+        chunksCount: chunks.length,
+        textLength: extractedText.length,
+        fileSize: file.size,
+        fileType: file.type,
+        wordCount: extractedText.split(/\s+/).filter(Boolean).length,
+      };
+
+      console.log("CLIENT PROCESSOR: Metadata prepared:", metadata);
+
+      // Upload file and extracted text to server
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("title", file.name);
+      formData.append("extractedText", extractedText);
+      formData.append("extractedChunks", JSON.stringify(chunks));
+      formData.append("extractionMetadata", JSON.stringify(metadata));
+
+      console.log(
+        "CLIENT PROCESSOR: Sending upload request with extracted data"
+      );
+
+      const response = await fetch("/api/documents/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      // Handle the response
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("CLIENT PROCESSOR: Upload error response:", errorData);
+        throw new Error(errorData.error || "Upload failed");
+      }
+
+      const data = await response.json();
+      console.log("CLIENT PROCESSOR: Upload successful, response:", data);
+
+      setProgress(100);
+      setStatus("completed");
+      setMessage("Processing completed successfully!");
+      if (onProcessingProgress) {
+        onProcessingProgress(100, "Processing completed successfully!");
+      }
+
+      // Notify the parent component
+      if (onProcessingComplete) {
+        onProcessingComplete(data);
+      }
+    } catch (err) {
+      console.error("CLIENT PROCESSOR: Error processing document:", err);
+      setError(err instanceof Error ? err.message : "Unknown error occurred");
+      setStatus("error");
+      if (onProcessingProgress) {
+        onProcessingProgress(0, "Error processing document");
+      }
+    }
+  };
+
+  const cancelProcessing = () => {
+    if (workerSupported && status === "processing") {
+      const workerService = DocumentProcessorWorkerService.getInstance();
+      workerService.cancelProcessing(documentId);
+      setStatus("idle");
+      setProgress(0);
+      onProcessingProgress?.(0, "Processing cancelled");
+    }
+  };
+
+  return (
+    <div className="p-4 border border-gray-200 rounded-lg bg-gray-50">
+      <h3 className="font-medium mb-2">Document Processing</h3>
+
+      {status === "idle" && (
+        <button
+          onClick={() => processFile(file)}
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+        >
+          Process Document
+        </button>
+      )}
+
+      {status === "processing" && (
+        <div>
+          <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
+            <div
+              className="bg-blue-600 h-2.5 rounded-full"
+              style={{ width: `${progress}%` }}
+            ></div>
+          </div>
+          <div className="flex justify-between items-center">
+            <p className="text-sm text-gray-600">
+              {workerSupported
+                ? "Processing in background..."
+                : "Processing..."}
+            </p>
+            {workerSupported && (
+              <button
+                onClick={cancelProcessing}
+                className="text-sm text-red-600 hover:text-red-800"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {status === "completed" && (
+        <div className="text-green-600">
+          Processing complete! The document is now searchable.
+        </div>
+      )}
+
+      {status === "error" && (
+        <div>
+          <p className="text-red-600">Error processing document: {error}</p>
+          <button
+            onClick={() => processFile(file)}
+            className="mt-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ClientDocumentProcessor;
