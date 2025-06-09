@@ -1,10 +1,6 @@
-import ImageOcrProcessor from "@/app/components/ocr/ImageOcrProcessor";
-import { Metadata } from "next";
+"use client";
 
-export const metadata: Metadata = {
-  title: "OCR Image Processing",
-  description: "Extract text from images using OCR",
-};
+import ImageOcrProcessor from "@/app/components/ocr/ImageOcrProcessor";
 
 export default function OcrPage() {
   return (

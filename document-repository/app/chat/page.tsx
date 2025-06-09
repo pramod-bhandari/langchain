@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import VoiceInput from "../components/voice-input/VoiceInput";
@@ -10,7 +10,8 @@ import { useDocumentStore } from "../store/documentStore";
 import { Message } from "../lib/memory/conversationMemory";
 import ClientDocumentProcessor from "../components/document-processing/ClientDocumentProcessor";
 
-export default function ChatPage() {
+// Create a separate component to use searchParams
+function ChatPageContent() {
   const searchParams = useSearchParams();
   const documentId = searchParams.get("documentId");
 
@@ -697,5 +698,14 @@ export default function ChatPage() {
         </div>
       )}
     </main>
+  );
+}
+
+// Main component that wraps the content with Suspense
+export default function ChatPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <ChatPageContent />
+    </Suspense>
   );
 }

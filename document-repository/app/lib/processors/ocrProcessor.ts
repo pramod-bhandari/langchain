@@ -1,4 +1,4 @@
-import { createWorker, Worker, WorkerParams } from 'tesseract.js';
+import { createWorker, Worker } from 'tesseract.js';
 
 /**
  * OCR processor using Tesseract.js for client-side image text extraction
