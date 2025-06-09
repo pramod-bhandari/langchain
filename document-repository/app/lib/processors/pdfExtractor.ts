@@ -1,16 +1,7 @@
 'use client';
 
 import * as pdfjsLib from 'pdfjs-dist';
-
-// Define TextItem interface to match pdf.js structure
-interface TextItem {
-  str: string;
-  dir?: string;
-  transform?: number[];
-  width?: number;
-  height?: number;
-  fontName?: string;
-}
+import { CanvasFactory } from '../canvas/canvasFactory';
 
 // Initialize the PDF.js worker
 // Use a local worker file instead of CDN to avoid network issues
@@ -35,19 +26,23 @@ export async function extractPdfText(file: Blob): Promise<string> {
     // Convert the file to an ArrayBuffer
     const arrayBuffer = await file.arrayBuffer();
     
-    // Load the PDF document
+    // Load the PDF document with our custom canvas factory
     console.log('PDF Extractor: Loading document with PDF.js');
-    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+    const loadingTask = pdfjsLib.getDocument({
+      data: arrayBuffer,
+      // @ts-expect-error - CanvasFactory is not in the type definitions but is valid
+      canvasFactory: CanvasFactory,
+    });
     
     // Add a progress callback
-    loadingTask.onProgress = (progress) => {
-      const percent = progress.loaded / progress.total * 100;
+    loadingTask.onProgress = (progressData: { loaded: number; total: number }) => {
+      const percent = progressData.loaded / progressData.total * 100;
       console.log(`PDF Extractor: Loading progress ${Math.round(percent)}%`);
     };
     
     // Handle password-protected documents
-    loadingTask.onPassword = (updatePassword, reason) => {
-      console.error('PDF Extractor: Document is password protected');
+    loadingTask.onPassword = (updatePassword: (password: string) => void, reason: number) => {
+      console.error('PDF Extractor: Document is password protected', reason);
       updatePassword(''); // Provide empty password to trigger failure properly
     };
     
@@ -70,7 +65,7 @@ export async function extractPdfText(file: Blob): Promise<string> {
         .map((item) => {
           // Check if item has str property (is TextItem)
           if ('str' in item) {
-            return (item as TextItem).str;
+            return item.str;
           }
           return '';
         })

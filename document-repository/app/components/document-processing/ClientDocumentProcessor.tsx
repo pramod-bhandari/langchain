@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { extractPdfText } from "@/app/lib/processors/pdfExtractor";
 import { extractDocxText } from "@/app/lib/processors/docxExtractor";
 import { extractXlsxText } from "@/app/lib/processors/xlsxExtractor";
-import { createWorker } from "tesseract.js";
+import { processWithTesseract } from "@/app/lib/ocr/tesseractLoader";
 import { useDocumentStore } from "@/app/store/documentStore";
 import DocumentProcessorWorkerService from "@/app/lib/processors/documentProcessorWorkerService";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
@@ -173,26 +173,12 @@ const ClientDocumentProcessor: React.FC<ClientDocumentProcessorProps> = ({
 
           console.log("CLIENT PROCESSOR: Starting OCR with Tesseract.js...");
           try {
-            // Use Tesseract.js directly with basic configuration
-            handleOcrProgress(10, "Creating OCR worker...");
-
-            // Create worker without custom options to avoid type errors
-            // @ts-expect-error - Type issues with Tesseract.js API
-            const worker = await createWorker();
-
-            handleOcrProgress(20, "OCR worker created, processing image...");
-
-            // Set up progress reporting using console.log for debugging
-            console.log("Starting OCR recognition process...");
-
-            // Process the image
-            handleOcrProgress(30, "Starting text recognition...");
-            const result = await worker.recognize(file);
-            extractedText = result.data.text;
-
-            // Clean up
-            console.log("Terminating OCR worker...");
-            await worker.terminate();
+            // Use our wrapper for Tesseract.js
+            extractedText = await processWithTesseract(
+              file,
+              "eng",
+              handleOcrProgress
+            );
 
             console.log("CLIENT PROCESSOR: OCR completed successfully");
             handleOcrProgress(100, "OCR processing complete!");

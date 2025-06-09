@@ -13,10 +13,9 @@ const nextConfig = {
       }
     });
 
-    // Add a rule to handle the canvas module in PDF.js
+    // Add a rule to handle PDF.js in the server environment
     if (isServer) {
       config.externals.push({
-        canvas: 'commonjs canvas',
         'pdfjs-dist': 'commonjs pdfjs-dist',
       });
     }
@@ -34,7 +33,10 @@ const nextConfig = {
   publicRuntimeConfig: {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  }
+  },
+  
+  // Add output configuration for standalone deployment
+  output: 'standalone'
 };
 
 export default nextConfig; 
