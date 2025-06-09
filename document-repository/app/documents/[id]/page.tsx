@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { getSupabaseClient } from "@/app/lib/supabase/client";
 import Link from "next/link";
 import DocumentViewer from "@/app/components/document-viewer/DocumentViewer";
 import AnnotationSystem from "@/app/components/annotations/AnnotationSystem";
 import ClientDocumentProcessor from "@/app/components/document-processing/ClientDocumentProcessor";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 
 interface DocumentData {
   id: string;
@@ -19,7 +19,9 @@ interface DocumentData {
   metadata: Record<string, unknown>;
 }
 
-export default function DocumentPage({ params }: { params: { id: string } }) {
+export default function DocumentPage() {
+  const params = useParams();
+  const documentId = params.id as string;
   const [document, setDocument] = useState<DocumentData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +34,7 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
         const { data, error: fetchError } = await getSupabaseClient()
           .from("documents")
           .select("*")
-          .eq("id", params.id)
+          .eq("id", documentId)
           .single();
 
         if (fetchError) throw fetchError;
@@ -50,7 +52,7 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
     }
 
     fetchDocument();
-  }, [params.id]);
+  }, [documentId]);
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -65,7 +67,7 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
       const { error } = await getSupabaseClient()
         .from("documents")
         .delete()
-        .eq("id", params.id);
+        .eq("id", documentId);
 
       if (error) throw error;
 

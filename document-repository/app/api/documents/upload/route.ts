@@ -250,7 +250,8 @@ export async function POST(req: Request) {
             metadata: {
               chunk_index: index,
               total_chunks: chunks.length,
-              client_extracted: true
+              client_extracted: true,
+              extraction_method: metadata.extractionMethod || 'client'
             }
           }));
           
@@ -310,7 +311,9 @@ export async function POST(req: Request) {
             chunks_count: chunks.length,
             extraction_source: 'client',
             extraction_method: metadata.extractionMethod || 'client',
-            word_count: metadata.wordCount || 0
+            word_count: metadata.wordCount || 0,
+            skip_server_processing: true, // Explicit flag to skip server processing
+            client_processed: true        // Additional flag for clarity
           };
           
           // Update the document with the new status

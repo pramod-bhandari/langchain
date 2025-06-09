@@ -1,15 +1,17 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
+import { Button } from "../components/ui/button";
 import {
-  DocumentProcessingService,
-  ProcessingProgress,
-} from "../lib/client/documentProcessingService";
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "../components/ui/card";
+import { Progress } from "../components/ui/progress";
 import { FilePlus, Check, AlertCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import ClientDocumentProcessor from "./document-processing/ClientDocumentProcessor";
 
 interface FileUploadProcessorProps {
   onUploadComplete?: (documentId: string) => void;
@@ -29,15 +31,11 @@ export default function FileUploadProcessor({
   const [generateEmbeddings, setGenerateEmbeddings] = useState<boolean>(false);
   const [chunkSize, setChunkSize] = useState<number>(1000);
   const [overlap, setOverlap] = useState<number>(200);
-  const [processingService, setProcessingService] =
-    useState<DocumentProcessingService | null>(null);
+  const [useClientProcessor, setUseClientProcessor] = useState<boolean>(false);
 
-  // Initialize the processing service
+  // Initialize with stored API key
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const service = DocumentProcessingService.getInstance();
-      setProcessingService(service);
-
       // Check if we have an OpenAI key stored
       const storedKey = localStorage.getItem("openai_api_key") || "";
       setOpenAiKey(storedKey);
@@ -54,47 +52,131 @@ export default function FileUploadProcessor({
       setStatus("idle");
       setMessage("");
       setIsUploading(false);
+
+      // Check if this file should use client processing
+      if (selectedFile) {
+        const fileType =
+          selectedFile.type || inferTypeFromName(selectedFile.name);
+        // Use client processing for images and common document types
+        setUseClientProcessor(
+          fileType.startsWith("image/") ||
+            fileType === "application/pdf" ||
+            fileType ===
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+            fileType ===
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+      } else {
+        setUseClientProcessor(false);
+      }
     },
     []
   );
 
-  // Handle progress updates
-  const handleProgress = useCallback((progressUpdate: ProcessingProgress) => {
-    setProgress(progressUpdate.progress);
-    setMessage(progressUpdate.message);
-    setStatus(progressUpdate.status);
-  }, []);
+  // Infer file type from name when MIME type is not available
+  const inferTypeFromName = (filename: string): string => {
+    const extension = filename.split(".").pop()?.toLowerCase() || "";
+
+    const extensionMap: Record<string, string> = {
+      pdf: "application/pdf",
+      txt: "text/plain",
+      csv: "text/csv",
+      doc: "application/msword",
+      docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      xls: "application/vnd.ms-excel",
+      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      png: "image/png",
+      gif: "image/gif",
+      webp: "image/webp",
+      tiff: "image/tiff",
+      md: "text/markdown",
+    };
+
+    return extensionMap[extension] || "application/octet-stream";
+  };
+
+  // Handle client processor progress
+  const handleClientProcessingProgress = useCallback(
+    (progress: number, message: string) => {
+      setProgress(progress);
+      setMessage(message);
+      setStatus(progress === 100 ? "completed" : "processing");
+    },
+    []
+  );
+
+  // Handle client processor completion
+  const handleClientProcessingComplete = useCallback(
+    (data: unknown) => {
+      setStatus("completed");
+      setProgress(100);
+      setMessage("Upload complete");
+      toast.success("Document processed and uploaded successfully");
+
+      // Notify parent component
+      if (
+        onUploadComplete &&
+        data &&
+        typeof data === "object" &&
+        "id" in data
+      ) {
+        onUploadComplete(data.id as string);
+      }
+
+      setIsUploading(false);
+    },
+    [onUploadComplete]
+  );
 
   // Process and upload the file
   const handleUpload = useCallback(async () => {
-    if (!file || !processingService) {
+    if (!file) {
       toast.error("Please select a file");
       return;
     }
 
-    try {
-      setIsUploading(true);
-      setStatus("processing");
-      setProgress(0);
-      setMessage("Starting processing...");
+    setIsUploading(true);
+    setStatus("processing");
+    setProgress(0);
+    setMessage("Starting processing...");
 
-      // Set OpenAI key if provided
+    if (useClientProcessor) {
+      // The ClientDocumentProcessor component will handle the process
+      // Just keep the uploading state true
+      return;
+    }
+
+    try {
+      // Direct implementation for uploading file (legacy non-client processing path)
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("title", file.name);
+
       if (openAiKey && generateEmbeddings) {
-        processingService.setOpenAiKey(openAiKey);
+        formData.append("openAiKey", openAiKey);
+        formData.append("generateEmbeddings", String(generateEmbeddings));
+        formData.append("chunkSize", String(chunkSize));
+        formData.append("overlap", String(overlap));
       }
 
-      // Use the processing service to upload the document
-      const result = await processingService.uploadLargeDocument(
-        file,
-        "/api/documents/upload",
-        {
-          chunkSize,
-          overlap,
-          generateEmbeddings,
-          chunkUploadSize: 5 * 1024 * 1024, // 5MB chunks
-        },
-        handleProgress
-      );
+      // Update progress
+      setProgress(20);
+      setMessage("Uploading file...");
+
+      // Send to upload endpoint
+      const response = await fetch("/api/documents/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Upload failed");
+      }
+
+      const data = await response.json();
 
       setStatus("completed");
       setProgress(100);
@@ -102,8 +184,8 @@ export default function FileUploadProcessor({
       toast.success("Document uploaded successfully");
 
       // Notify parent component
-      if (onUploadComplete) {
-        onUploadComplete(result.documentId);
+      if (onUploadComplete && data.id) {
+        onUploadComplete(data.id);
       }
     } catch (error) {
       console.error("Upload error:", error);
@@ -118,23 +200,19 @@ export default function FileUploadProcessor({
     }
   }, [
     file,
-    processingService,
+    useClientProcessor,
     openAiKey,
     generateEmbeddings,
     chunkSize,
     overlap,
-    handleProgress,
     onUploadComplete,
   ]);
 
   // Save OpenAI key
   const saveOpenAiKey = useCallback(() => {
-    if (processingService) {
-      processingService.setOpenAiKey(openAiKey);
-      localStorage.setItem("openai_api_key", openAiKey);
-      toast.success("API key saved");
-    }
-  }, [processingService, openAiKey]);
+    localStorage.setItem("openai_api_key", openAiKey);
+    toast.success("API key saved");
+  }, [openAiKey]);
 
   return (
     <Card className="w-full">
@@ -152,7 +230,7 @@ export default function FileUploadProcessor({
               file:text-sm file:font-semibold
               file:bg-blue-50 file:text-blue-700
               hover:file:bg-blue-100"
-            accept=".pdf,.txt,.doc,.docx,.xlsx,.xls"
+            accept=".pdf,.txt,.doc,.docx,.xlsx,.xls,.jpg,.jpeg,.png,.gif,.webp,.tiff"
             disabled={isUploading}
           />
         </div>
@@ -226,6 +304,13 @@ export default function FileUploadProcessor({
               Selected file: <span className="font-medium">{file.name}</span> (
               {(file.size / 1024 / 1024).toFixed(2)} MB)
             </p>
+            {useClientProcessor && !isUploading ? (
+              <div className="mt-2 p-2 bg-gray-50 border rounded-md mb-2">
+                <p className="text-xs text-gray-600 mb-1">
+                  This file will be processed with client-side OCR/extraction
+                </p>
+              </div>
+            ) : null}
             <Button
               onClick={handleUpload}
               disabled={isUploading}
@@ -243,6 +328,17 @@ export default function FileUploadProcessor({
                 </>
               )}
             </Button>
+          </div>
+        )}
+
+        {/* Show ClientDocumentProcessor when needed */}
+        {file && useClientProcessor && isUploading && (
+          <div>
+            <ClientDocumentProcessor
+              file={file}
+              onProcessingProgress={handleClientProcessingProgress}
+              onProcessingComplete={handleClientProcessingComplete}
+            />
           </div>
         )}
 

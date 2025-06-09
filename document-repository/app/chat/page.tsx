@@ -8,6 +8,7 @@ import ConversationHistory from "../components/chat/ConversationHistory";
 import { useConversationStore } from "../store/conversationStore";
 import { useDocumentStore } from "../store/documentStore";
 import { Message } from "../lib/memory/conversationMemory";
+import ClientDocumentProcessor from "../components/document-processing/ClientDocumentProcessor";
 
 export default function ChatPage() {
   const searchParams = useSearchParams();
@@ -24,23 +25,23 @@ export default function ChatPage() {
 
   const { fetchDocument, currentDocument } = useDocumentStore();
 
-  const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [docTitle, setDocTitle] = useState<string>("");
+  const [docDescription, setDocDescription] = useState<string>("");
+  const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [uploadStatus, setUploadStatus] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [input, setInput] = useState<string>("");
+  const [showSidebar, setShowSidebar] = useState<boolean>(false);
 
-  // Document upload states
-  const [isUploading, setIsUploading] = useState(false);
-  const [showUploadModal, setShowUploadModal] = useState(false);
-  const [showSidebar, setShowSidebar] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
-  const [docTitle, setDocTitle] = useState("");
-  const [docDescription, setDocDescription] = useState("");
-  const [uploadStatus, setUploadStatus] = useState("");
-  const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const [useClientProcessor, setUseClientProcessor] = useState<boolean>(false);
 
   // Load conversations and handle document parameter
   useEffect(() => {
@@ -132,12 +133,53 @@ export default function ChatPage() {
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
+    const selectedFile = e.target.files?.[0] || null;
+    setFile(selectedFile);
+
+    // Check if this is an image file that needs client-side processing
+    if (selectedFile) {
       // Auto-populate the title with filename without extension
-      const fileName = e.target.files[0].name;
+      const fileName = selectedFile.name;
       const titleFromName = fileName.split(".").slice(0, -1).join(".");
       setDocTitle(titleFromName);
+
+      const isImage = selectedFile.type.startsWith("image/");
+      setUseClientProcessor(isImage);
+    } else {
+      setUseClientProcessor(false);
+    }
+  };
+
+  // Handle client processor progress updates
+  const handleClientProcessingProgress = (
+    progress: number,
+    message: string
+  ) => {
+    console.log(`OCR Progress: ${progress}%, Message: ${message}`);
+    // Force a progress update even for 0% to show the progress bar
+    if (progress === 0) progress = 1;
+    setUploadProgress(progress);
+    setUploadStatus(message);
+
+    // Update the UI to show we're still processing
+    setIsUploading(true);
+  };
+
+  // Handle client processor completion
+  const handleClientProcessingComplete = (data: unknown) => {
+    console.log("OCR Processing Complete:", data);
+    if (data && typeof data === "object" && "id" in data) {
+      setIsUploading(false);
+      toggleUploadModal();
+      addMessage("assistant", `Uploaded document: ${docTitle || file?.name}`);
+      addMessage(
+        "assistant",
+        "Document has been processed and is ready for querying."
+      );
+    } else {
+      setError("OCR processing completed but no document ID was returned");
+      console.error("OCR processing completed but data invalid:", data);
+      setIsUploading(false);
     }
   };
 
@@ -154,6 +196,17 @@ export default function ChatPage() {
     e.preventDefault();
     if (!file) return;
 
+    // Check if this is an image file
+    const isImage = file.type.startsWith("image/");
+
+    // If it's an image, we'll use the client processor
+    if (isImage) {
+      setIsUploading(true);
+      setUseClientProcessor(true);
+      return; // The ClientDocumentProcessor component will handle the rest
+    }
+
+    // For non-image files, use the existing flow
     try {
       setIsUploading(true);
       setError(null);
@@ -566,6 +619,11 @@ export default function ChatPage() {
                       <p className="text-xs text-gray-500">
                         {(file.size / 1024).toFixed(1)} KB
                       </p>
+                      {useClientProcessor && (
+                        <p className="text-xs text-blue-600 mt-1">
+                          Will be processed with client-side OCR
+                        </p>
+                      )}
                     </div>
                   ) : (
                     <div>
@@ -585,37 +643,55 @@ export default function ChatPage() {
                 />
               </div>
 
-              {isUploading && (
-                <div className="mb-4">
-                  <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
-                    <div
-                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${uploadProgress}%` }}
-                    ></div>
+              {useClientProcessor && isUploading ? (
+                <div className="mt-4">
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">
+                        {uploadStatus || "Processing image..."}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {uploadProgress}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
+                      <div
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${uploadProgress}%` }}
+                      />
+                    </div>
+                    <p className="text-xs mt-2 text-gray-500">
+                      Client-side OCR processing may take several moments
+                    </p>
                   </div>
-                  <p className="text-sm text-gray-600 text-center">
-                    {uploadStatus}
-                  </p>
+
+                  <div>
+                    <ClientDocumentProcessor
+                      file={file!}
+                      onProcessingProgress={handleClientProcessingProgress}
+                      onProcessingComplete={handleClientProcessingComplete}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={toggleUploadModal}
+                    className="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-100"
+                    disabled={isUploading}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!file || isUploading}
+                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed"
+                  >
+                    {isUploading ? "Processing..." : "Upload"}
+                  </button>
                 </div>
               )}
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={toggleUploadModal}
-                  className="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-100"
-                  disabled={isUploading}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={!file || isUploading}
-                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed"
-                >
-                  {isUploading ? "Processing..." : "Upload"}
-                </button>
-              </div>
             </form>
           </div>
         </div>

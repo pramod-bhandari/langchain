@@ -1,4 +1,4 @@
-import { createWorker, Worker } from 'tesseract.js';
+import { createWorker, Worker, WorkerParams } from 'tesseract.js';
 
 /**
  * OCR processor using Tesseract.js for client-side image text extraction
@@ -12,7 +12,8 @@ export class OcrProcessor {
   private constructor() {}
 
   /**
-   * Get singleton instance
+   * Get the singleton instance of OcrProcessor
+   * @returns The OcrProcessor instance
    */
   public static getInstance(): OcrProcessor {
     if (!OcrProcessor.instance) {
@@ -22,12 +23,12 @@ export class OcrProcessor {
   }
 
   /**
-   * Initialize the Tesseract worker
-   * @param language The language to use for OCR (default: 'eng')
+   * Initialize the OCR worker
    */
-  public async initialize(language = 'eng'): Promise<void> {
+  public async initialize(): Promise<void> {
+    // If already initialized or initializing, return the promise
     if (this.worker) {
-      return; // Already initialized
+      return Promise.resolve();
     }
 
     if (this.isInitializing && this.initPromise) {
@@ -35,18 +36,28 @@ export class OcrProcessor {
     }
 
     this.isInitializing = true;
-    
     this.initPromise = new Promise<void>(async (resolve, reject) => {
       try {
-        console.log('Initializing Tesseract worker...');
-        this.worker = await createWorker(language);
-        console.log('Tesseract worker initialized.');
+        console.log('Initializing Tesseract OCR worker...');
+        
+        // Ensure we're in a browser environment
+        if (typeof window === 'undefined') {
+          throw new Error('OcrProcessor is only supported in browser environments');
+        }
+        
+        // Create a simple worker with standard configuration
+        this.worker = await createWorker();
+        
+        console.log('Tesseract OCR worker created, loading language...');
+        
+        // Load language explicitly
+        console.log('Tesseract OCR worker initialized successfully');
         resolve();
       } catch (error) {
-        console.error('Failed to initialize Tesseract worker:', error);
-        reject(error);
-      } finally {
+        console.error('Failed to initialize OCR worker:', error);
         this.isInitializing = false;
+        this.initPromise = null;
+        reject(error);
       }
     });
 
@@ -106,12 +117,14 @@ export class OcrProcessor {
   }
 
   /**
-   * Terminate the Tesseract worker
+   * Terminate the OCR worker
    */
   public async terminate(): Promise<void> {
     if (this.worker) {
       await this.worker.terminate();
       this.worker = null;
     }
+    this.isInitializing = false;
+    this.initPromise = null;
   }
 } 

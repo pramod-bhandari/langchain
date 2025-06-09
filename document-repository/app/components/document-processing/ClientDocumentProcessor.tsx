@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect } from "react";
 import { extractPdfText } from "@/app/lib/processors/pdfExtractor";
-import { chunkText } from "@/app/lib/processors/textChunker";
+import { extractDocxText } from "@/app/lib/processors/docxExtractor";
+import { extractXlsxText } from "@/app/lib/processors/xlsxExtractor";
+import { createWorker } from "tesseract.js";
 import { useDocumentStore } from "@/app/store/documentStore";
 import DocumentProcessorWorkerService from "@/app/lib/processors/documentProcessorWorkerService";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
@@ -11,7 +13,7 @@ interface ClientDocumentProcessorProps {
   documentId?: string;
   file: File;
   onProcessingProgress?: (progress: number, message: string) => void;
-  onProcessingComplete?: (data: any) => void;
+  onProcessingComplete?: (data: unknown) => void;
 }
 
 const ClientDocumentProcessor: React.FC<ClientDocumentProcessorProps> = ({
@@ -26,8 +28,11 @@ const ClientDocumentProcessor: React.FC<ClientDocumentProcessorProps> = ({
   const [progress, setProgress] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [workerSupported, setWorkerSupported] = useState<boolean>(false);
-  const { updateDocumentStatus } = useDocumentStore();
-  const [message, setMessage] = useState<string>("");
+  // Using useDocumentStore() but not using updateDocumentStatus
+  useDocumentStore();
+  // Using a single state variable for process status messages
+  const [processingStatusMessage, setProcessingStatusMessage] =
+    useState<string>("");
 
   // Check if web workers are supported
   useEffect(() => {
@@ -82,11 +87,37 @@ const ClientDocumentProcessor: React.FC<ClientDocumentProcessorProps> = ({
     onProcessingComplete,
   ]);
 
+  /**
+   * Infer file type from filename when MIME type is not available
+   */
+  function inferTypeFromName(filename: string): string {
+    const extension = filename.split(".").pop()?.toLowerCase() || "";
+
+    const extensionMap: Record<string, string> = {
+      pdf: "application/pdf",
+      txt: "text/plain",
+      csv: "text/csv",
+      doc: "application/msword",
+      docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      xls: "application/vnd.ms-excel",
+      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      png: "image/png",
+      gif: "image/gif",
+      webp: "image/webp",
+      tiff: "image/tiff",
+      md: "text/markdown",
+    };
+
+    return extensionMap[extension] || "application/octet-stream";
+  }
+
   const processFile = async (file: File) => {
     if (!file) return;
 
     setStatus("processing");
-    setMessage("Starting text extraction...");
+    setProcessingStatusMessage("Starting text extraction...");
     setProgress(10);
     if (onProcessingProgress) {
       onProcessingProgress(10, "Starting text extraction...");
@@ -97,13 +128,107 @@ const ClientDocumentProcessor: React.FC<ClientDocumentProcessorProps> = ({
         `CLIENT PROCESSOR: Starting extraction for ${file.name} (${file.type}, ${file.size} bytes)`
       );
 
-      // Extract text from the file
+      // Extract text from the file based on its type
       let extractedText = "";
+      let extractionMethod = "unknown";
+      const fileType = file.type || inferTypeFromName(file.name);
+
       try {
-        console.log("CLIENT PROCESSOR: Calling extractPdfText");
-        extractedText = await extractPdfText(file);
+        if (fileType === "application/pdf") {
+          console.log("CLIENT PROCESSOR: Processing PDF file");
+          setProcessingStatusMessage("Extracting text from PDF...");
+          extractedText = await extractPdfText(file);
+          extractionMethod = "pdf.js";
+        } else if (
+          fileType ===
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ) {
+          console.log("CLIENT PROCESSOR: Processing DOCX file");
+          setProcessingStatusMessage("Extracting text from DOCX...");
+          extractedText = await extractDocxText(file);
+          extractionMethod = "mammoth.js";
+        } else if (
+          fileType ===
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ) {
+          console.log("CLIENT PROCESSOR: Processing Excel file");
+          setProcessingStatusMessage("Extracting text from Excel file...");
+          extractedText = await extractXlsxText(file);
+          extractionMethod = "xlsx";
+        } else if (fileType.startsWith("image/")) {
+          console.log("CLIENT PROCESSOR: Processing image file with OCR");
+          setProcessingStatusMessage("Performing OCR on image...");
+
+          // Create a progress handler for the OCR process
+          const handleOcrProgress = (progress: number, status: string) => {
+            console.log(`OCR Progress: ${progress}%, Status: ${status}`);
+            setProgress(progress);
+            setProcessingStatusMessage(status);
+
+            // Also notify the parent component if callback is provided
+            if (onProcessingProgress) {
+              onProcessingProgress(progress, status);
+            }
+          };
+
+          console.log("CLIENT PROCESSOR: Starting OCR with Tesseract.js...");
+          try {
+            // Use Tesseract.js directly with basic configuration
+            handleOcrProgress(10, "Creating OCR worker...");
+
+            // Create worker without custom options to avoid type errors
+            // @ts-expect-error - Type issues with Tesseract.js API
+            const worker = await createWorker();
+
+            handleOcrProgress(20, "OCR worker created, processing image...");
+
+            // Set up progress reporting using console.log for debugging
+            console.log("Starting OCR recognition process...");
+
+            // Process the image
+            handleOcrProgress(30, "Starting text recognition...");
+            const result = await worker.recognize(file);
+            extractedText = result.data.text;
+
+            // Clean up
+            console.log("Terminating OCR worker...");
+            await worker.terminate();
+
+            console.log("CLIENT PROCESSOR: OCR completed successfully");
+            handleOcrProgress(100, "OCR processing complete!");
+            extractionMethod = "tesseract.js";
+          } catch (ocrError) {
+            console.error("CLIENT PROCESSOR: OCR processing error:", ocrError);
+            setError(
+              `OCR processing error: ${
+                ocrError instanceof Error ? ocrError.message : "Unknown error"
+              }`
+            );
+            if (onProcessingProgress) {
+              onProcessingProgress(
+                0,
+                `OCR error: ${
+                  ocrError instanceof Error ? ocrError.message : "Unknown error"
+                }`
+              );
+            }
+            return;
+          }
+        } else if (
+          fileType === "text/plain" ||
+          fileType === "text/csv" ||
+          fileType === "text/markdown"
+        ) {
+          console.log("CLIENT PROCESSOR: Processing text file");
+          setProcessingStatusMessage("Reading text file...");
+          extractedText = await file.text();
+          extractionMethod = "text";
+        } else {
+          throw new Error(`Unsupported file type: ${fileType}`);
+        }
+
         console.log(
-          `CLIENT PROCESSOR: Extraction successful, got ${extractedText.length} characters`
+          `CLIENT PROCESSOR: Extraction successful, got ${extractedText.length} characters using ${extractionMethod}`
         );
         console.log(
           `CLIENT PROCESSOR: Sample text: "${extractedText.substring(
@@ -112,7 +237,10 @@ const ClientDocumentProcessor: React.FC<ClientDocumentProcessorProps> = ({
           )}..."`
         );
       } catch (extractError) {
-        console.error("CLIENT PROCESSOR: PDF extraction error:", extractError);
+        console.error(
+          `CLIENT PROCESSOR: ${extractionMethod} extraction error:`,
+          extractError
+        );
         setError(
           `Extraction error: ${
             extractError instanceof Error
@@ -124,7 +252,7 @@ const ClientDocumentProcessor: React.FC<ClientDocumentProcessorProps> = ({
       }
 
       setProgress(40);
-      setMessage(
+      setProcessingStatusMessage(
         `Text extracted (${extractedText.length} characters). Chunking...`
       );
       if (onProcessingProgress) {
@@ -142,7 +270,8 @@ const ClientDocumentProcessor: React.FC<ClientDocumentProcessorProps> = ({
 
       console.log("CLIENT PROCESSOR: Creating chunks");
       const docs = await splitter.createDocuments([extractedText]);
-      const chunks = docs.map((doc: any) => doc.pageContent);
+      // Type explicitly as string[] to avoid any type
+      const chunks: string[] = docs.map((doc) => doc.pageContent as string);
       console.log(`CLIENT PROCESSOR: Created ${chunks.length} chunks`);
 
       // Sample chunks
@@ -156,7 +285,9 @@ const ClientDocumentProcessor: React.FC<ClientDocumentProcessorProps> = ({
       }
 
       setProgress(60);
-      setMessage(`Created ${chunks.length} text chunks. Uploading...`);
+      setProcessingStatusMessage(
+        `Created ${chunks.length} text chunks. Uploading...`
+      );
       if (onProcessingProgress) {
         onProcessingProgress(
           60,
@@ -166,7 +297,7 @@ const ClientDocumentProcessor: React.FC<ClientDocumentProcessorProps> = ({
 
       // Prepare metadata
       const metadata = {
-        extractionMethod: "client-side",
+        extractionMethod,
         chunksCount: chunks.length,
         textLength: extractedText.length,
         fileSize: file.size,
@@ -205,7 +336,7 @@ const ClientDocumentProcessor: React.FC<ClientDocumentProcessorProps> = ({
 
       setProgress(100);
       setStatus("completed");
-      setMessage("Processing completed successfully!");
+      setProcessingStatusMessage("Processing completed successfully!");
       if (onProcessingProgress) {
         onProcessingProgress(100, "Processing completed successfully!");
       }
@@ -227,7 +358,7 @@ const ClientDocumentProcessor: React.FC<ClientDocumentProcessorProps> = ({
   const cancelProcessing = () => {
     if (workerSupported && status === "processing") {
       const workerService = DocumentProcessorWorkerService.getInstance();
-      workerService.cancelProcessing(documentId);
+      workerService.cancelProcessing(documentId || "");
       setStatus("idle");
       setProgress(0);
       onProcessingProgress?.(0, "Processing cancelled");
@@ -259,7 +390,7 @@ const ClientDocumentProcessor: React.FC<ClientDocumentProcessorProps> = ({
             <p className="text-sm text-gray-600">
               {workerSupported
                 ? "Processing in background..."
-                : "Processing..."}
+                : processingStatusMessage || "Processing..."}
             </p>
             {workerSupported && (
               <button

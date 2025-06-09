@@ -44,6 +44,77 @@ export async function POST(req: Request) {
         if (fetchError) throw fetchError;
         if (!document) throw new Error('Document not found');
         
+        // Check if document was already processed by the client
+        if (document.metadata && 
+            (document.metadata.skip_server_processing === true || 
+             document.metadata.client_processed === true)) {
+          console.log(`Document ${documentId} was already processed by the client. Skipping server-side processing.`);
+          
+          // Update document status to reflect client processing is complete
+          await updateDocumentStatus(
+            supabase, 
+            documentId, 
+            'completed', 
+            1, 
+            {
+              client_processed: true,
+              server_processing_skipped: true,
+              processed_at: new Date().toISOString()
+            }
+          );
+          
+          return NextResponse.json({ 
+            success: true,
+            documentId,
+            status: 'completed',
+            message: 'Document was already processed by the client. Server processing skipped.'
+          });
+        }
+        
+        // Check if this is an image file and should be handled client-side
+        if (document.file_type && document.file_type.startsWith('image/')) {
+          console.log(`Document ${documentId} is an image (${document.file_type}). This should be processed client-side.`);
+          console.log(`Checking metadata for evidence of client-side processing...`);
+          
+          // If image doesn't have client-processing flags but was uploaded through the UI
+          // we should mark it for client-side only processing
+          if (document.metadata && !document.metadata.skip_server_processing) {
+            console.log(`Image ${documentId} lacks client-processing flags. Marking for client-side processing.`);
+            
+            await supabase
+              .from('documents')
+              .update({
+                metadata: {
+                  ...document.metadata,
+                  requires_client_processing: true,
+                  processing_note: 'Image files should be processed on the client side with OCR'
+                }
+              })
+              .eq('id', documentId);
+              
+            // Update status to error with informative message
+            await updateDocumentStatus(
+              supabase, 
+              documentId, 
+              'error', 
+              0, 
+              {
+                error_message: 'This image requires client-side OCR processing',
+                server_processing_skipped: true,
+                image_needs_client_ocr: true,
+                processed_at: new Date().toISOString()
+              }
+            );
+            
+            return NextResponse.json({ 
+              success: false,
+              documentId,
+              status: 'error',
+              message: 'Image files should be processed with client-side OCR'
+            }, { status: 400 });
+          }
+        }
+        
         // Get file from storage
         console.log(`Downloading file from storage: ${document.file_path} (type: ${document.file_type})`);
         const { data: fileData, error: fileError } = await supabase.storage
